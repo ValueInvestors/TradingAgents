@@ -3,9 +3,9 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
+from tradingagents.dataflows import y_finance
 from tradingagents.dataflows.errors import NoMarketDataError
 from tradingagents.dataflows.symbol_utils import is_etf_identity
-from tradingagents.dataflows import y_finance
 
 
 @pytest.mark.unit
