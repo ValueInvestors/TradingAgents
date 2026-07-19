@@ -12,7 +12,7 @@ from .stockstats_utils import (
     load_ohlcv,
     yf_retry,
 )
-from .symbol_utils import NoMarketDataError, normalize_symbol
+from .symbol_utils import NoMarketDataError, is_etf_identity, normalize_symbol
 
 
 def get_YFin_data_online(
@@ -269,6 +269,183 @@ def get_stockstats_indicator(
         return ""
 
     return str(indicator_value)
+
+
+def _display_number(value, *, percent: bool = False) -> str:
+    """Format Yahoo fund metadata without emitting pandas NaN sentinels."""
+    if value is None or (not isinstance(value, str) and pd.isna(value)):
+        return "N/A"
+    if isinstance(value, (int, float)):
+        if percent:
+            return f"{value:.2%}"
+        if abs(value) >= 1_000_000:
+            return f"{value:,.0f}"
+        return f"{value:.4g}"
+    return str(value)
+
+
+def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
+    if not rows:
+        return ""
+    header = "| " + " | ".join(headers) + " |"
+    divider = "| " + " | ".join("---" for _ in headers) + " |"
+    body = ["| " + " | ".join(str(cell) for cell in row) + " |" for row in rows]
+    return "\n".join([header, divider, *body])
+
+
+def get_fund_holdings(
+    ticker: Annotated[str, "ETF ticker symbol"],
+    curr_date: Annotated[str, "analysis date in YYYY-MM-DD"] = None,
+) -> str:
+    """Return the latest disclosed ETF portfolio data available from Yahoo.
+
+    Yahoo does not expose point-in-time historical holdings here. The report
+    therefore labels the retrieval date and warns agents not to treat current
+    composition as information known on an earlier analysis date.
+    """
+    canonical = normalize_symbol(ticker)
+    ticker_obj = yf.Ticker(canonical)
+
+    try:
+        info = yf_retry(lambda: ticker_obj.info) or {}
+        identity = {
+            "quote_type": info.get("quoteType"),
+            "company_name": info.get("longName") or info.get("shortName"),
+        }
+        if not is_etf_identity(identity):
+            raise NoMarketDataError(
+                ticker,
+                canonical,
+                f"instrument is not identified as an ETF (quoteType={info.get('quoteType')!r})",
+            )
+
+        funds_data = ticker_obj.funds_data
+        values = {}
+        last_error = None
+        for name in (
+            "fund_overview",
+            "fund_operations",
+            "asset_classes",
+            "top_holdings",
+            "equity_holdings",
+            "bond_holdings",
+            "bond_ratings",
+            "sector_weightings",
+        ):
+            try:
+                values[name] = yf_retry(lambda name=name: getattr(funds_data, name))
+            except Exception as exc:  # one missing section must not hide the others
+                last_error = exc
+                values[name] = None
+
+        sections: list[str] = []
+
+        overview = values["fund_overview"] or {}
+        overview_rows = [
+            [label, str(overview[key])]
+            for key, label in (
+                ("categoryName", "Category"),
+                ("family", "Fund family"),
+                ("legalType", "Legal type"),
+            )
+            if overview.get(key) not in (None, "")
+        ]
+        if overview_rows:
+            sections.append("## Fund overview\n" + _markdown_table(["Field", "Value"], overview_rows))
+
+        operations = values["fund_operations"]
+        if isinstance(operations, pd.DataFrame) and not operations.empty:
+            operation_rows = []
+            for metric, row in operations.iterrows():
+                is_percent = "ratio" in str(metric).lower() or "turnover" in str(metric).lower()
+                operation_rows.append(
+                    [str(metric), *[_display_number(row[col], percent=is_percent) for col in operations.columns]]
+                )
+            sections.append(
+                "## Costs and operations\n"
+                + _markdown_table(["Metric", *map(str, operations.columns)], operation_rows)
+            )
+
+        asset_classes = values["asset_classes"] or {}
+        asset_rows = [
+            [str(name).removesuffix("Position"), _display_number(weight, percent=True)]
+            for name, weight in asset_classes.items()
+            if weight is not None and not pd.isna(weight)
+        ]
+        if asset_rows:
+            sections.append("## Asset allocation\n" + _markdown_table(["Asset class", "Weight"], asset_rows))
+
+        top_holdings = values["top_holdings"]
+        if isinstance(top_holdings, pd.DataFrame) and not top_holdings.empty:
+            holding_rows = []
+            for symbol, row in top_holdings.iterrows():
+                holding_rows.append(
+                    [
+                        str(symbol),
+                        str(row.get("Name") or ""),
+                        _display_number(row.get("Holding Percent"), percent=True),
+                    ]
+                )
+            sections.append(
+                "## Top holdings\n"
+                + _markdown_table(["Symbol", "Name", "Portfolio weight"], holding_rows)
+            )
+
+        sectors = values["sector_weightings"] or {}
+        sector_rows = [
+            [str(name).replace("_", " ").title(), _display_number(weight, percent=True)]
+            for name, weight in sorted(sectors.items(), key=lambda item: item[1] or 0, reverse=True)
+            if weight is not None and not pd.isna(weight) and weight != 0
+        ]
+        if sector_rows:
+            sections.append("## Sector exposure\n" + _markdown_table(["Sector", "Weight"], sector_rows))
+
+        for key, title in (
+            ("equity_holdings", "Equity portfolio characteristics"),
+            ("bond_holdings", "Bond portfolio characteristics"),
+        ):
+            frame = values[key]
+            if isinstance(frame, pd.DataFrame) and not frame.empty:
+                rows = [
+                    [str(metric), *[_display_number(row[col]) for col in frame.columns]]
+                    for metric, row in frame.iterrows()
+                ]
+                sections.append(
+                    f"## {title}\n" + _markdown_table(["Metric", *map(str, frame.columns)], rows)
+                )
+
+        bond_ratings = values["bond_ratings"] or {}
+        rating_rows = [
+            [str(name).replace("_", " ").upper(), _display_number(weight, percent=True)]
+            for name, weight in bond_ratings.items()
+            if weight is not None and not pd.isna(weight) and weight != 0
+        ]
+        if rating_rows:
+            sections.append("## Bond credit exposure\n" + _markdown_table(["Rating", "Weight"], rating_rows))
+
+        if not sections:
+            detail = "no fund holdings fields returned"
+            if last_error is not None:
+                detail += f": {last_error}"
+            raise NoMarketDataError(ticker, canonical, detail)
+
+        retrieved_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        analysis_line = f"Requested analysis date: {curr_date}\n" if curr_date else ""
+        warning = (
+            "IMPORTANT: Yahoo supplies the latest available portfolio disclosure, not "
+            "historical point-in-time holdings. Do not imply these holdings were known "
+            "on the requested analysis date when that date predates retrieval."
+        )
+        return (
+            f"# ETF Holdings and Portfolio Composition for {canonical}\n"
+            f"Data retrieved on: {retrieved_at}\n"
+            f"{analysis_line}{warning}\n\n"
+            + "\n\n".join(sections)
+        )
+    except NoMarketDataError:
+        raise
+    except Exception as exc:
+        raise NoMarketDataError(ticker, canonical, f"fund holdings lookup failed: {exc}") from exc
 
 
 def get_fundamentals(

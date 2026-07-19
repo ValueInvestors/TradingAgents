@@ -15,6 +15,7 @@ from tradingagents.agents.utils.agent_utils import (
     build_instrument_context,
     get_balance_sheet,
     get_cashflow,
+    get_fund_holdings,
     get_fundamentals,
     get_global_news,
     get_income_statement,
@@ -29,11 +30,13 @@ from tradingagents.agents.utils.agent_utils import (
 )
 from tradingagents.agents.utils.memory import TradingMemoryLog
 from tradingagents.dataflows.config import set_config
+from tradingagents.dataflows.symbol_utils import is_etf_identity
 from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.reporting import write_report_tree
 
+from .analyst_execution import validate_analysts_for_asset_type
 from .checkpointer import checkpoint_step, clear_checkpoint, get_checkpointer, thread_id
 from .conditional_logic import ConditionalLogic
 from .propagation import Propagator
@@ -225,6 +228,7 @@ class TradingAgentsGraph:
                     get_income_statement,
                 ]
             ),
+            "fund_holdings": ToolNode([get_fund_holdings]),
         }
 
     def _resolve_benchmark(self, ticker: str) -> str:
@@ -369,6 +373,18 @@ class TradingAgentsGraph:
         a per-ticker SqliteSaver so a crashed run can resume from the last
         successful node on a subsequent invocation with the same ticker+date.
         """
+        # A programmatic caller may select the ETF-only analyst while relying on
+        # the historical default asset_type="stock". Resolve that one ambiguous
+        # case from cached Yahoo identity so SPY/QQQ work without an extra flag;
+        # explicit non-stock modes remain authoritative.
+        if (
+            asset_type == "stock"
+            and "fund_holdings" in self.selected_analysts
+            and is_etf_identity(resolve_instrument_identity(company_name))
+        ):
+            asset_type = "etf"
+        validate_analysts_for_asset_type(self.selected_analysts, asset_type)
+
         self.ticker = company_name
 
         # Resolve any pending memory-log entries for this ticker before the pipeline runs.
@@ -418,6 +434,7 @@ class TradingAgentsGraph:
 
     def _run_graph(self, company_name, trade_date, asset_type: str = "stock"):
         """Execute the graph and write the resulting state to disk and memory log."""
+        validate_analysts_for_asset_type(self.selected_analysts, asset_type)
         # Initialize state — inject memory log context for PM and the
         # deterministically resolved instrument identity for all agents.
         past_context = self.memory_log.get_past_context(company_name)
@@ -490,6 +507,7 @@ class TradingAgentsGraph:
             "sentiment_report": final_state["sentiment_report"],
             "news_report": final_state["news_report"],
             "fundamentals_report": final_state["fundamentals_report"],
+            "fund_holdings_report": final_state.get("fund_holdings_report", ""),
             "investment_debate_state": {
                 "bull_history": final_state["investment_debate_state"]["bull_history"],
                 "bear_history": final_state["investment_debate_state"]["bear_history"],

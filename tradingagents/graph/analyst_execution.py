@@ -50,7 +50,25 @@ ANALYST_NODE_SPECS: dict[str, AnalystNodeSpec] = {
         tool_node="tools_fundamentals",
         report_key="fundamentals_report",
     ),
+    "fund_holdings": AnalystNodeSpec(
+        key="fund_holdings",
+        agent_node="Fund Holdings Analyst",
+        clear_node="Msg Clear Fund Holdings",
+        tool_node="tools_fund_holdings",
+        report_key="fund_holdings_report",
+    ),
 }
+
+
+def validate_analysts_for_asset_type(
+    selected_analysts: Iterable[str], asset_type: str
+) -> None:
+    """Enforce analyst availability rules for programmatic callers."""
+    keys = {getattr(key, "value", key) for key in selected_analysts}
+    if "fund_holdings" in keys and asset_type.lower() != "etf":
+        raise ValueError(
+            "Fund Holdings Analyst is available only when asset_type='etf'."
+        )
 
 
 def build_analyst_execution_plan(

@@ -18,6 +18,7 @@ ANALYST_ORDER = [
     ("Sentiment Analyst", AnalystType.SOCIAL),
     ("News Analyst", AnalystType.NEWS),
     ("Fundamentals Analyst", AnalystType.FUNDAMENTALS),
+    ("Fund Holdings Analyst", AnalystType.FUND_HOLDINGS),
 ]
 
 CRYPTO_SUFFIXES = ("-USD", "-USDT", "-USDC", "-BTC", "-ETH")
@@ -78,25 +79,43 @@ def normalize_ticker_symbol(ticker: str) -> str:
         return ticker.strip().upper()
 
 
-def detect_asset_type(ticker: str) -> AssetType:
+def detect_asset_type(ticker: str, identity: dict | None = None) -> AssetType:
     """Classify on the canonical symbol so e.g. BTCUSD and BTC-USDT both read as
     crypto (#981/#982), matching what the data path will actually fetch."""
     canonical = normalize_ticker_symbol(ticker)
     if canonical.endswith(CRYPTO_SUFFIXES):
         return AssetType.CRYPTO
+    if identity is None:
+        from tradingagents.agents.utils.agent_utils import resolve_instrument_identity
+
+        identity = resolve_instrument_identity(canonical)
+    from tradingagents.dataflows.symbol_utils import is_etf_identity
+
+    if is_etf_identity(identity):
+        return AssetType.ETF
     return AssetType.STOCK
 
 
 def filter_analysts_for_asset_type(
     analysts: list[AnalystType], asset_type: AssetType
 ) -> list[AnalystType]:
-    if asset_type != AssetType.CRYPTO:
-        return analysts
-    return [
-        analyst
-        for analyst in analysts
-        if analyst != AnalystType.FUNDAMENTALS
-    ]
+    if asset_type == AssetType.ETF:
+        allowed = {
+            AnalystType.MARKET,
+            AnalystType.SOCIAL,
+            AnalystType.NEWS,
+            AnalystType.FUND_HOLDINGS,
+        }
+    elif asset_type == AssetType.CRYPTO:
+        allowed = {AnalystType.MARKET, AnalystType.SOCIAL, AnalystType.NEWS}
+    else:
+        allowed = {
+            AnalystType.MARKET,
+            AnalystType.SOCIAL,
+            AnalystType.NEWS,
+            AnalystType.FUNDAMENTALS,
+        }
+    return [analyst for analyst in analysts if analyst in allowed]
 
 
 def get_analysis_date() -> str:

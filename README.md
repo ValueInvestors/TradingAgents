@@ -71,6 +71,7 @@ Our framework decomposes complex trading tasks into specialized roles.
 
 ### Analyst Team
 - Fundamentals Analyst: Evaluates company financials and performance metrics, identifying intrinsic values and potential red flags.
+- Fund Holdings Analyst: Available only for ETFs; evaluates latest disclosed holdings, concentration, sector/asset allocation, costs, turnover, and portfolio-style risks. Holdings are current vendor disclosures rather than historical point-in-time snapshots.
 - Sentiment Analyst: Aggregates news headlines, StockTwits, and Reddit chatter into a single sentiment read to gauge short-term market mood.
 - News Analyst: Monitors global news and macroeconomic indicators, interpreting the impact of events on market conditions.
 - Technical Analyst: Utilizes technical indicators (like MACD and RSI) to detect trading patterns and forecast price movements.
@@ -185,6 +186,7 @@ TradingAgents works with any market Yahoo Finance covers, using the exchange-suf
 - Hong Kong: `0700.HK` · Tokyo: `7203.T` · London: `AZN.L`
 - India: `RELIANCE.NS`, `.BO` · Canada: `.TO` · Australia: `.AX`
 - China A-shares: Shanghai `.SS`, Shenzhen `.SZ` (e.g. `600519.SS` for Kweichow Moutai)
+- ETFs: `SPY`, `QQQ`, `510300.SS`, `159915.SZ` (the Fund Holdings Analyst appears only when the instrument resolves as an ETF; holdings coverage varies by Yahoo Finance market)
 - Crypto: `BTC-USD`, `ETH-USD`
 
 <p align="center">

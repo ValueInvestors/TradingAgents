@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
 
 # NoMarketDataError lives in the vendor-error taxonomy (errors.py); re-exported
 # here for the many call sites that import it alongside normalize_symbol.
@@ -71,6 +72,7 @@ _ALIASES = {
 
 # Yahoo symbols may contain letters, digits, and these structural characters.
 _YAHOO_SAFE = re.compile(r"^[A-Za-z0-9._\-\^=]+$")
+_ETF_NAME = re.compile(r"(?:\bETF\b|EXCHANGE[- ]TRADED FUND)", re.IGNORECASE)
 
 
 # Crypto quote currencies that all map to Yahoo's USD pair. Yahoo lists only
@@ -99,6 +101,22 @@ def _normalize_crypto(s: str) -> str | None:
     """Return ``<BASE>-USD`` for a known USD/USDT/USDC-quoted crypto, else None."""
     base = crypto_base(s)
     return f"{base}-USD" if base else None
+
+
+def is_etf_identity(identity: Mapping[str, str] | None) -> bool:
+    """Return whether resolved instrument metadata identifies an ETF.
+
+    Yahoo labels most ETFs with ``quoteType=ETF``. Some exchanges (notably
+    Shanghai and Shenzhen) label ETFs as equities, so the resolved long/short
+    name is also checked for an explicit ETF marker. Mutual funds are
+    intentionally excluded.
+    """
+    if not identity:
+        return False
+    if str(identity.get("quote_type", "")).strip().upper() == "ETF":
+        return True
+    name = identity.get("company_name") or identity.get("name") or ""
+    return bool(_ETF_NAME.search(str(name)))
 
 
 def normalize_symbol(raw: str) -> str:

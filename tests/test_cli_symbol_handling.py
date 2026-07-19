@@ -43,17 +43,19 @@ def test_ticker_input_validation(value, ok):
 
 
 # --- #981/#982: asset-type classified on the canonical symbol ---
-@pytest.mark.parametrize("raw,expected", [
-    ("BTCUSD", AssetType.CRYPTO),
-    ("BTC-USDT", AssetType.CRYPTO),
-    ("BTC-USD", AssetType.CRYPTO),
-    ("ETHUSD", AssetType.CRYPTO),
-    ("AAPL", AssetType.STOCK),
-    ("GC=F", AssetType.STOCK),
-    ("600519.SS", AssetType.STOCK),
+@pytest.mark.parametrize("raw,identity,expected", [
+    ("BTCUSD", None, AssetType.CRYPTO),
+    ("BTC-USDT", None, AssetType.CRYPTO),
+    ("BTC-USD", None, AssetType.CRYPTO),
+    ("ETHUSD", None, AssetType.CRYPTO),
+    ("AAPL", {"quote_type": "EQUITY"}, AssetType.STOCK),
+    ("GC=F", {"quote_type": "FUTURE"}, AssetType.STOCK),
+    ("600519.SS", {"quote_type": "EQUITY"}, AssetType.STOCK),
+    ("SPY", {"quote_type": "ETF"}, AssetType.ETF),
+    ("510300.SS", {"quote_type": "EQUITY", "company_name": "CSI 300 ETF"}, AssetType.ETF),
 ])
-def test_detect_asset_type(raw, expected):
-    assert detect_asset_type(raw) == expected
+def test_detect_asset_type(raw, identity, expected):
+    assert detect_asset_type(raw, identity) == expected
 
 
 def test_cli_normalize_delegates_to_data_layer():

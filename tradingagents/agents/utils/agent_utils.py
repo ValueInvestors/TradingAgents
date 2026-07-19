@@ -8,6 +8,7 @@ from langchain_core.messages import HumanMessage, RemoveMessage
 
 # Import tools from separate utility files
 from tradingagents.agents.utils.core_stock_tools import get_stock_data
+from tradingagents.agents.utils.fund_holdings_tools import get_fund_holdings
 from tradingagents.agents.utils.fundamental_data_tools import (
     get_balance_sheet,
     get_cashflow,
@@ -33,6 +34,7 @@ __all__ = [
     "get_balance_sheet",
     "get_cashflow",
     "get_income_statement",
+    "get_fund_holdings",
     "get_news",
     "get_global_news",
     "get_insider_transactions",
@@ -132,7 +134,8 @@ def build_instrument_context(
     than pattern-matching the price chart to a wrong one (#814).
     """
     is_crypto = asset_type == "crypto"
-    instrument_label = "asset" if is_crypto else "instrument"
+    is_etf = asset_type == "etf"
+    instrument_label = "asset" if is_crypto else ("ETF" if is_etf else "instrument")
     context = (
         f"The {instrument_label} to analyze is `{ticker}`. "
         "Use this exact ticker in every tool call, report, and recommendation, "
@@ -143,7 +146,7 @@ def build_instrument_context(
     if identity:
         name = identity.get("company_name") or identity.get("name")
         if name:
-            details.append(f"{'Name' if is_crypto else 'Company'}: {name}")
+            details.append(f"{'Name' if is_crypto or is_etf else 'Company'}: {name}")
         sector, industry = identity.get("sector"), identity.get("industry")
         if sector and industry:
             details.append(f"Business classification: {sector} / {industry}")
@@ -153,6 +156,8 @@ def build_instrument_context(
             details.append(f"Industry: {industry}")
         if identity.get("exchange"):
             details.append(f"Exchange: {identity['exchange']}")
+        if identity.get("quote_type"):
+            details.append(f"Instrument type: {identity['quote_type']}")
 
     if details:
         context += (
@@ -165,6 +170,12 @@ def build_instrument_context(
         context += (
             " Treat it as a crypto asset rather than a company, and do not "
             "assume company fundamentals are available."
+        )
+    elif is_etf:
+        context += (
+            " Treat it as an exchange-traded fund rather than an operating company. "
+            "Use portfolio holdings, allocation, costs, and tracking risks; do not "
+            "assume corporate financial statements belong to the ETF."
         )
     return context
 
