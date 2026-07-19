@@ -5,6 +5,7 @@ from tradingagents.graph.analyst_execution import (
     build_analyst_execution_plan,
     get_initial_analyst_node,
     sync_analyst_tracker_from_chunk,
+    validate_analysts_for_asset_type,
 )
 
 
@@ -39,6 +40,17 @@ class AnalystExecutionPlanTests(unittest.TestCase):
         self.assertEqual(spec.key, "social")
         self.assertEqual(spec.agent_node, "Sentiment Analyst")
         self.assertEqual(spec.report_key, "sentiment_report")
+
+    def test_fund_holdings_plan_metadata(self):
+        spec = build_analyst_execution_plan(["fund_holdings"]).specs[0]
+        self.assertEqual(spec.agent_node, "Fund Holdings Analyst")
+        self.assertEqual(spec.tool_node, "tools_fund_holdings")
+        self.assertEqual(spec.report_key, "fund_holdings_report")
+
+    def test_fund_holdings_is_etf_only(self):
+        validate_analysts_for_asset_type(["market", "fund_holdings"], "etf")
+        with self.assertRaisesRegex(ValueError, "only.*etf"):
+            validate_analysts_for_asset_type(["fund_holdings"], "stock")
 
 
 class AnalystWallTimeTrackerTests(unittest.TestCase):

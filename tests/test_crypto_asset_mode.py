@@ -10,9 +10,13 @@ class CryptoAssetModeTests(unittest.TestCase):
         self.assertEqual(detect_asset_type("BTC-USD"), AssetType.CRYPTO)
         self.assertEqual(detect_asset_type("eth-usd"), AssetType.CRYPTO)
 
-    def test_defaults_non_crypto_symbols_to_stock(self):
-        self.assertEqual(detect_asset_type("AAPL"), AssetType.STOCK)
-        self.assertEqual(detect_asset_type("SPY"), AssetType.STOCK)
+    def test_distinguishes_stock_and_etf_identity(self):
+        self.assertEqual(
+            detect_asset_type("AAPL", {"quote_type": "EQUITY"}), AssetType.STOCK
+        )
+        self.assertEqual(
+            detect_asset_type("SPY", {"quote_type": "ETF"}), AssetType.ETF
+        )
 
     def test_filters_out_fundamentals_analyst_for_crypto(self):
         analysts = [
@@ -20,6 +24,7 @@ class CryptoAssetModeTests(unittest.TestCase):
             AnalystType.SOCIAL,
             AnalystType.NEWS,
             AnalystType.FUNDAMENTALS,
+            AnalystType.FUND_HOLDINGS,
         ]
 
         self.assertEqual(
@@ -37,11 +42,29 @@ class CryptoAssetModeTests(unittest.TestCase):
             AnalystType.SOCIAL,
             AnalystType.NEWS,
             AnalystType.FUNDAMENTALS,
+            AnalystType.FUND_HOLDINGS,
         ]
 
         self.assertEqual(
             filter_analysts_for_asset_type(analysts, AssetType.STOCK),
-            analysts,
+            [
+                AnalystType.MARKET,
+                AnalystType.SOCIAL,
+                AnalystType.NEWS,
+                AnalystType.FUNDAMENTALS,
+            ],
+        )
+
+    def test_etf_replaces_company_fundamentals_with_holdings(self):
+        analysts = list(AnalystType)
+        self.assertEqual(
+            filter_analysts_for_asset_type(analysts, AssetType.ETF),
+            [
+                AnalystType.MARKET,
+                AnalystType.SOCIAL,
+                AnalystType.NEWS,
+                AnalystType.FUND_HOLDINGS,
+            ],
         )
 
     def test_propagator_includes_asset_type_in_initial_state(self):

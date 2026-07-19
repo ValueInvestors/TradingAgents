@@ -15,9 +15,10 @@ def create_bear_researcher(llm):
         sentiment_report = state["sentiment_report"]
         news_report = state["news_report"]
         fundamentals_report = state["fundamentals_report"]
+        fund_holdings_report = state.get("fund_holdings_report", "")
         instrument_context = get_instrument_context_from_state(state)
         asset_type = state.get("asset_type", "stock")
-        target_label = "stock" if asset_type == "stock" else "asset"
+        target_label = {"stock": "stock", "etf": "ETF"}.get(asset_type, "asset")
         fundamentals_label = (
             "Company fundamentals report"
             if asset_type == "stock"
@@ -41,6 +42,7 @@ Market research report: {market_research_report}
 Social media sentiment report: {sentiment_report}
 Latest world affairs news: {news_report}
 {fundamentals_label}: {fundamentals_report}
+ETF holdings and portfolio composition report: {fund_holdings_report}
 Conversation history of the debate: {history}
 Last bull argument: {current_response}
 Use this information to deliver a compelling bear argument, refute the bull's claims, and engage in a dynamic debate that demonstrates the risks and weaknesses of investing in the {target_label}.
